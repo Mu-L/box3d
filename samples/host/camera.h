@@ -112,11 +112,12 @@ public:
 	{
 		m_pivot = pivot;
 	}
- 
-	void SetTarget( b3Pos target )
-	{
-		m_pivot = target;
-	}
+
+	// Aim at a point given in simulation space: length units and the simulation up axis, mapped
+	// into the display frame the pivot lives in, then the transform refreshed. Follow cams read
+	// positions straight from the world, so they land here. Counterpart to DrawOrigin, which maps
+	// the eye back the other way. SetPivot takes a point already in display space.
+	void SetTarget( b3Pos target );
 
 	// Frame an AABB: keep current yaw/pitch, move pivot to the AABB center,
 	// and refit radius so the AABB fits in view at the current FOV+aspect.

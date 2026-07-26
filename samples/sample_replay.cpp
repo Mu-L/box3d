@@ -240,6 +240,7 @@ public:
 		m_hoverQuery = -1;
 		m_revealSelection = false;
 		m_drawAllQueries = false;
+		m_followSelection = false;
 		m_queryIndexBuilt = false;
 		m_querySearch[0] = '\0';
 		m_querySearchKind = 0;
@@ -567,6 +568,13 @@ public:
 			return;
 		}
 
+		// Retarget after the frame advances so the follow reads the pose about to be drawn, and before
+		// the cull box below is taken, since both it and the draw origin hang off the eye.
+		if ( UpdateFollowCamera() )
+		{
+			SetDrawOrigin( m_camera->DrawOrigin() );
+		}
+
 		// Draw the replay world through the same adapter path the live samples use.
 		b3DebugDraw debugDraw;
 		MakeDebugDraw( &debugDraw );
@@ -576,8 +584,13 @@ public:
 
 		// Drive the shared outline highlight from the selection. A shape selection outlines that
 		// shape alone, a body selection outlines the whole body. Set before the draw so the mask
-		// is filled by the draw callback.
-		if ( m_selKind == SelShape )
+		// is filled by the draw callback. Following already centers the selection, so the outline
+		// would only wrap and obscure the thing being watched.
+		if ( m_followSelection )
+		{
+			ClearSelection();
+		}
+		else if ( m_selKind == SelShape )
 		{
 			SetSelectedShape( SelectedShape() );
 		}
@@ -592,7 +605,7 @@ public:
 
 		b3World_Draw( m_replayWorldId, &debugDraw, B3_DEFAULT_MASK_BITS );
 
-		DrawSelectionHighlight();
+		// DrawSelectionHighlight();
 
 		// Overlay query geometry and recorded hits on top of the world. The toggle draws every recorded
 		// query, otherwise just the selected one. Re-resolve the pinned query to this frame so a repeated
@@ -678,6 +691,58 @@ public:
 	void FocusHome() override
 	{
 		FrameRecording();
+	}
+
+	// Where the follow cam should sit this frame. A body, shape or joint selection tracks the body's
+	// center of mass, the stable point to watch even while a shape spins about it. A query tracks the
+	// center of its recorded bounds. False when the selection resolves to nothing at this frame, which
+	// happens before a body spawns or on a frame that does not issue the pinned query.
+	bool FollowTarget( b3Pos* position ) const
+	{
+		if ( m_player == nullptr )
+		{
+			return false;
+		}
+
+		if ( m_selKind == SelQuery )
+		{
+			int sel = ResolveSelectedQuery();
+			if ( sel < 0 )
+			{
+				return false;
+			}
+
+			b3AABB aabb = b3RecPlayer_GetFrameQuery( m_player, sel ).aabb;
+			if ( b3IsValidAABB( aabb ) == false )
+			{
+				return false;
+			}
+
+			*position = b3ToPos( b3AABB_Center( aabb ) );
+			return true;
+		}
+
+		b3BodyId body = SelectedBody();
+		if ( m_selKind == SelNone || b3Body_IsValid( body ) == false )
+		{
+			return false;
+		}
+
+		*position = b3Body_GetWorldCenter( body );
+		return true;
+	}
+
+	// Ride the selection. Returns true when the eye moved, so the caller can relatch the draw origin.
+	bool UpdateFollowCamera()
+	{
+		b3Pos position;
+		if ( m_followSelection == false || FollowTarget( &position ) == false )
+		{
+			return false;
+		}
+
+		m_camera->SetTarget( position );
+		return true;
 	}
 
 	// Transport row shared by the right panel and the Timeline tab. Play is green, Pause red.
@@ -766,6 +831,11 @@ public:
 
 		// Overlay every recorded query, not just the one selected in the outline.
 		ImGui::Checkbox( "Draw All Queries", &m_drawAllQueries );
+
+		// Keep the selection centered as the recording plays. Orbit and zoom still aim the view, and the
+		// cursor is untouched, so picking and the scene tree keep working while it follows. The
+		// silhouette outline drops while following, since a centered body needs no pointing at.
+		ImGui::Checkbox( "Follow Selection", &m_followSelection );
 
 		// View-only stand-up for recordings authored with +Z as up. The simulation is untouched.
 		// Reframe on a toggle so the rotated bounds stay centered, matching the fit done on load.
@@ -1757,6 +1827,11 @@ public:
 	bool m_revealSelection; // one-shot: expand and scroll the tree to a viewport pick or search jump
 	bool m_drawAllQueries;	// overlay every recorded query, not just the selected one
 	int m_hoverQuery;		// outline query row under the cursor, drawn as a transient highlight
+
+	// Follow cam. Unlike the third person camera the character samples use, this drives the pivot only.
+	// The cursor stays free, so picking, the timeline and the scene tree keep working and orbit still
+	// aims the view.
+	bool m_followSelection;
 
 	// Re-usable buffer for getting all shapes from a body.
 	std::vector<b3ShapeId> m_shapeBuffer;

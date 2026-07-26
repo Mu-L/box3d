@@ -192,6 +192,27 @@ void Camera::SetOrbit( float yawRadians, float pitchRadians, float radius )
 	RebuildBasisAndView( *this );
 }
 
+void Camera::SetTarget( b3Pos target )
+{
+	// The sim->display map is a uniform scale plus an optional quarter turn, so apply it directly
+	// rather than through the float matrix. In large world mode that keeps the range the pivot is
+	// double for; a matrix multiply would round it away.
+	const double s = 1.0 / m_lengthUnitsPerMeter;
+	m_pivot.x = s * target.x;
+	if ( m_zUp )
+	{
+		m_pivot.y = s * target.z;
+		m_pivot.z = -s * target.y;
+	}
+	else
+	{
+		m_pivot.y = s * target.y;
+		m_pivot.z = s * target.z;
+	}
+
+	RebuildBasisAndView( *this );
+}
+
 void Camera::SetView( float yawDegrees, float pitchDegrees, float radius, b3Pos pivot )
 {
 	SetPivot( pivot );
