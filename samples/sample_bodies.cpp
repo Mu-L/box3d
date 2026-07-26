@@ -493,7 +493,7 @@ public:
 		b3Quat quat = b3Body_GetRotation( m_topId );
 		b3Vec3 axis = b3RotateVector( quat, b3Vec3_axisY );
 		b3Vec3 omega = b3Body_GetAngularVelocity( m_topId );
-		float spin = b3Dot( omega , axis );
+		float spin = b3Dot( omega, axis );
 		float cosTilt = b3ClampFloat( axis.y, -1.0f, 1.0f );
 		float expected = ExpectedRate( spin, cosTilt );
 
@@ -1180,3 +1180,83 @@ public:
 };
 
 static int sampleFixedRotation = RegisterSample( "Bodies", "Fixed Rotation", FixedRotation::Create );
+
+// This should invert like this video. I'm not sure why it doesn't.
+// https://www.youtube.com/watch?v=_up0BiLCliA
+class ClassRing : public Sample
+{
+public:
+	explicit ClassRing( SampleContext* context )
+		: Sample( context )
+	{
+		if ( context->restart == false )
+		{
+			m_camera->SetView( 40.0f, 30.0f, 15.0f, { 0.0f, 2.0f, 0.0f } );
+		}
+
+		AddGroundBox( 40.0f );
+
+		constexpr int n = 32;
+		constexpr float r = 1.0f;
+		b3Vec3 hullPoints[2 * n];
+
+		b3Vec3 tangent1 = b3Vec3_axisX;
+		b3Vec3 tangent2 = b3Vec3_axisY;
+
+		float deltaAngle = 2.0f * B3_PI / n;
+		b3CosSin cs = b3ComputeCosSin( deltaAngle );
+
+		float zs[2] = { -0.05f * r, 0.05f * r };
+		int m = 0;
+
+		for ( int j = 0; j < 2; ++j )
+		{
+			float x1 = r, y1 = 0.0f;
+			b3Vec3 p = b3Blend2( x1, tangent1, y1, tangent2 );
+			for ( int i = 0; i < n; ++i )
+			{
+				hullPoints[m] = p;
+				hullPoints[m].z = zs[j];
+				m += 1;
+
+				float x2 = cs.cosine * x1 - cs.sine * y1;
+				float y2 = cs.sine * x1 + cs.cosine * y1;
+				p = b3Blend2( x2, tangent1, y2, tangent2 );
+
+				x1 = x2;
+				y1 = y2;
+			}
+		}
+
+		assert( m == 2 * n );
+
+		b3HullData* hull = b3CreateHull( hullPoints, m, m );
+
+		b3BodyDef bodyDef = b3DefaultBodyDef();
+		bodyDef.type = b3_dynamicBody;
+		bodyDef.position = { 0.0f, r, 0.0f };
+		bodyDef.rotation = b3MakeQuatFromAxisAngle( b3Vec3_axisX, 15.0f * B3_PI / 180.0f );
+		bodyDef.allowFastRotation = true;
+		b3BodyId bodyId = b3CreateBody( m_worldId, &bodyDef );
+
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.density = 1.0f;
+		shapeDef.baseMaterial.rollingResistance = 0.1f;
+
+		b3CreateHullShape( bodyId, &shapeDef, hull );
+		b3Sphere sphere = { .center = { 0.0f, -0.75f * r, 0.0f }, .radius = 0.3f };
+		b3CreateSphereShape( bodyId, &shapeDef, &sphere );
+
+		b3Vec3 angularVelocity = b3RotateVector( bodyDef.rotation, { 0.0f, 50.0f, 0.0f } );
+		b3Body_SetAngularVelocity( bodyId, angularVelocity );
+
+		b3DestroyHull( hull );
+	}
+
+	static Sample* Create( SampleContext* context )
+	{
+		return new ClassRing( context );
+	}
+};
+
+static int sampleClassRing = RegisterSample( "Bodies", "Class Ring", ClassRing::Create );
